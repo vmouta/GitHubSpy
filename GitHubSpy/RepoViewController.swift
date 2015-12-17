@@ -71,6 +71,7 @@ class RepoViewController: UITableViewController {
             }
             
             if let repos = try! NSJSONSerialization.JSONObjectWithData(data, options: NSJSONReadingOptions.MutableContainers) as? NSArray {
+                print("Repos:\n \(repos)")
                 let realm = try! Realm()
                 realm.beginWrite()
                 realm.deleteAll()
@@ -94,6 +95,12 @@ class RepoViewController: UITableViewController {
     }
     
     // MARK: UIViewController
+    
+    deinit{
+        if let notificationToken = notificationToken{
+            realm.removeNotification(notificationToken)
+        }
+    }
     
     override func viewDidLoad() {
         super.viewDidLoad()
