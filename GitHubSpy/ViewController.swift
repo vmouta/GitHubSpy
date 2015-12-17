@@ -23,6 +23,7 @@ class ViewController: UIViewController {
     static let BaseUrl = "https://api.github.com/"
     static let OrgsUrlPath = "orgs/"
     static let UserUrlPath = "users/"
+    static let ReposUrlPath = "repos/"
     
     static let DefaultUser: String = "vmouta"
     static let DefaultOrganization: String = "zucred"
@@ -54,6 +55,17 @@ class ViewController: UIViewController {
             url += ViewController.OrgsUrlPath + (user.text?.isEmpty==false ? user.text! : ViewController.DefaultOrganization)
         }
         url += "/repos"
+        return NSURL ( string :  url )
+    }
+    
+    func  commitsUrl(repository: String)  -> NSURL? {
+        var url = ViewController.BaseUrl + ViewController.ReposUrlPath
+        if(self.isUserType) {
+            url += (user.text?.isEmpty==false ? user.text! : ViewController.DefaultUser) + "/" + repository
+        } else {
+            url += (user.text?.isEmpty==false ? user.text! : ViewController.DefaultOrganization) + "/" + repository
+        }
+        url += "/commits"
         return NSURL ( string :  url )
     }
 

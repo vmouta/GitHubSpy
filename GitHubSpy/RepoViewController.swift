@@ -24,9 +24,11 @@ class RepoViewController: UITableViewController {
     static let GitHubImageRepository = "Repository"
     
     static let GitHubRepoFork = "fork"
-    static let GitHubRepoName = "full_name"
+    static let GitHubRepoName = "name"
     static let GitHubRepoCreated = "created_at"
     static let GitHubRepoDescription = "description"
+    
+    static let GitHubCommitSha = "sha"
     
     var repos: NSArray?
     
@@ -35,19 +37,15 @@ class RepoViewController: UITableViewController {
     }
     
     func fetchData() {
-        var url: NSURL
-        let parent: ViewController? = self.navigationController?.viewControllers[0] as? ViewController
-        if let parentUrl = parent?.url {
-            url = parentUrl
-        } else {
+        var url = getParent()?.url
+        if url == nil {
             url = NSURL(string:"https://api.github.com/users/mralexgray/repos")!
         }
         
         let urlSession = NSURLSession.sharedSession()
-        let request = NSMutableURLRequest(URL: url)
+        let request = NSMutableURLRequest(URL: url!)
         request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
         request.HTTPMethod = "GET"
-        print("Fetch repos. Url: \(url)")
         
         /* Lets keep the option of downloading to a temporary file for the moment as comments
         let  task  =  urlSession.downloadTaskWithRequest(request)   {(request,  response,  error)  in
@@ -66,7 +64,8 @@ class RepoViewController: UITableViewController {
         }
         task.resume()
         */
-        
+
+        print("Fetch repos url: \(url)")
         let  task  =  urlSession.dataTaskWithRequest(request, completionHandler: { (data, _, error) -> Void in
             guard let data = data where error == nil else {
                 print("\nerror on download \(error)")
@@ -81,6 +80,10 @@ class RepoViewController: UITableViewController {
             })
         })
         task.resume()
+    }
+    
+    func getParent() -> ViewController? {
+        return self.navigationController?.viewControllers[0] as? ViewController
     }
     
     // MARK: UIViewController
@@ -106,11 +109,9 @@ class RepoViewController: UITableViewController {
     
     override func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell {
         // TODO: We know the cell exist "!" but some add some protection would look nicer
-        let cell : UITableViewCell = tableView.dequeueReusableCellWithIdentifier("RepoViewCell")!
-
+        let cell : RepoViewCell = (tableView.dequeueReusableCellWithIdentifier("RepoViewCell") as! RepoViewCell)
         if let repo: NSDictionary = self.repos?[indexPath.row] as? NSDictionary {
             /// Cell Configuration
-            cell.textLabel?.text = repo.valueForKey(RepoViewController.GitHubRepoName) as? String
             var details: String? = repo.valueForKey(RepoViewController.GitHubRepoCreated) as? String
             let description: String? = repo.valueForKey(RepoViewController.GitHubRepoDescription) as? String
             if description?.isEmpty == false {
@@ -123,8 +124,19 @@ class RepoViewController: UITableViewController {
             } else {
                 cell.imageView?.image = UIImage(named: RepoViewController.GitHubImageRepository)
             }
+            
+            if let name = repo.valueForKey(RepoViewController.GitHubRepoName) as? String {
+                var url = getParent()?.commitsUrl(name)
+                if url == nil {
+                    print("Something went wrong let use the defaut commits url")
+                    url = NSURL(string:"https://api.github.com/repos/mralexgray/ACEView/commits")!
+                }
+                cell.textLabel?.text = name
+                cell.updateCommits(url!)
+            }
         } else {
-            print("Something went wrong")
+            print("Something went wrong with repos data!")
+            cell.textLabel?.text = "No Data"
         }
         return cell
     }
@@ -134,10 +146,32 @@ class RepoViewController: UITableViewController {
     override func tableView(tableView: UITableView, didSelectRowAtIndexPath indexPath: NSIndexPath) {
         
     }
+    
+    
 }
-
 
 class RepoViewCell: UITableViewCell {
     
-    
+    func updateCommits(url: NSURL)
+    {
+        NSURLSession.sharedSession().dataTaskWithURL(url, completionHandler: { (data, _, error) -> Void in
+            guard let data = data where error == nil else {
+                print("error on download \(error)")
+                return
+            }
+            
+            let commits = try! NSJSONSerialization.JSONObjectWithData(data, options: NSJSONReadingOptions.MutableContainers) as? NSArray
+            print(commits)
+            if let commit: NSDictionary? = commits?[0] as? NSDictionary {
+                if let sha = commit?.valueForKey(RepoViewController.GitHubCommitSha) as? String {
+                    self.detailTextLabel?.text? += " sha:" + sha
+                }
+            }
+            
+            dispatch_async(dispatch_get_main_queue()) { () -> Void in
+                print("download completed \(url)")
+                self.layoutSubviews()
+            }
+        }).resume()
+    }
 }
