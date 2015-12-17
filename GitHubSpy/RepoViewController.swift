@@ -17,20 +17,18 @@
  */
 
 import UIKit
+import RealmSwift
 
 class RepoViewController: UITableViewController {
     
     static let GitHubImageFork = "Fork"
     static let GitHubImageRepository = "Repository"
     
-    static let GitHubRepoFork = "fork"
-    static let GitHubRepoName = "name"
-    static let GitHubRepoCreated = "created_at"
-    static let GitHubRepoDescription = "description"
-    
     static let GitHubCommitSha = "sha"
     
-    var repos: NSArray?
+    let realm = try! Realm()
+    let repos = try! Realm().objects(Repository)
+    var notificationToken: NotificationToken?
     
     @IBAction func refresh(sender: AnyObject) {
         fetchData()
@@ -64,7 +62,7 @@ class RepoViewController: UITableViewController {
         }
         task.resume()
         */
-
+        
         print("Fetch repos url: \(url)")
         let  task  =  urlSession.dataTaskWithRequest(request, completionHandler: { (data, _, error) -> Void in
             guard let data = data where error == nil else {
@@ -72,10 +70,19 @@ class RepoViewController: UITableViewController {
                 return
             }
             
-            self.repos = try! NSJSONSerialization.JSONObjectWithData(data, options: NSJSONReadingOptions.MutableContainers) as? NSArray
-            print(self.repos)
+            if let repos = try! NSJSONSerialization.JSONObjectWithData(data, options: NSJSONReadingOptions.MutableContainers) as? NSArray {
+                let realm = try! Realm()
+                realm.beginWrite()
+                realm.deleteAll()
+                for object in repos {
+                    if let repo = object as? NSDictionary {
+                        realm.add(Repository(jsonDictionary: repo))
+                    }
+                }
+                try! realm.commitWrite()
+            }
+            
             dispatch_async(dispatch_get_main_queue(), { () -> Void in
-                self.tableView.reloadData()
                 self.refreshControl?.endRefreshing()
             })
         })
@@ -90,6 +97,13 @@ class RepoViewController: UITableViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        // Set realm notification block
+        notificationToken = realm.addNotificationBlock { [unowned self] note, realm in
+            self.tableView.reloadData()
+        }
+
+        self.tableView.reloadData()
         self.refreshControl?.beginRefreshing()
         self.tableView.contentOffset = CGPointMake(0, -(self.refreshControl?.frame.size.height ?? 0));
         
@@ -104,36 +118,29 @@ class RepoViewController: UITableViewController {
     // MARK: - UITableViewDataSource
 
     override func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return self.repos?.count ?? 0
+        return self.repos.count
     }
     
     override func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell {
         // TODO: We know the cell exist "!" but some add some protection would look nicer
         let cell : RepoViewCell = (tableView.dequeueReusableCellWithIdentifier("RepoViewCell") as! RepoViewCell)
-        if let repo: NSDictionary = self.repos?[indexPath.row] as? NSDictionary {
+        if let repo: Repository = self.repos[indexPath.row] {
+            
             /// Cell Configuration
-            var details: String? = repo.valueForKey(RepoViewController.GitHubRepoCreated) as? String
-            let description: String? = repo.valueForKey(RepoViewController.GitHubRepoDescription) as? String
-            if description?.isEmpty == false {
-                details? += " - " + description!
-            }
-            cell.detailTextLabel?.text = details
-            let isFork : Bool? = repo.valueForKey(RepoViewController.GitHubRepoFork) as? Bool
-            if isFork?.boolValue == true {
+            cell.detailTextLabel?.text =  repo.details
+            if repo.isFork {
                 cell.imageView?.image = UIImage(named: RepoViewController.GitHubImageFork)
             } else {
                 cell.imageView?.image = UIImage(named: RepoViewController.GitHubImageRepository)
             }
             
-            if let name = repo.valueForKey(RepoViewController.GitHubRepoName) as? String {
-                var url = getParent()?.commitsUrl(name)
-                if url == nil {
-                    print("Something went wrong let use the defaut commits url")
-                    url = NSURL(string:"https://api.github.com/repos/mralexgray/ACEView/commits")!
-                }
-                cell.textLabel?.text = name
-                cell.updateCommits(url!)
+            cell.textLabel?.text = repo.name
+            var url = getParent()?.commitsUrl(repo.name)
+            if url == nil {
+                print("Something went wrong let use the defaut commits url")
+                url = NSURL(string:"https://api.github.com/repos/mralexgray/ACEView/commits")!
             }
+            cell.updateCommits(url!)
         } else {
             print("Something went wrong with repos data!")
             cell.textLabel?.text = "No Data"
@@ -146,15 +153,16 @@ class RepoViewController: UITableViewController {
     override func tableView(tableView: UITableView, didSelectRowAtIndexPath indexPath: NSIndexPath) {
         
     }
-    
-    
 }
 
 class RepoViewCell: UITableViewCell {
     
+    var task: NSURLSessionDataTask?
+    
     func updateCommits(url: NSURL)
     {
-        NSURLSession.sharedSession().dataTaskWithURL(url, completionHandler: { (data, _, error) -> Void in
+        print("Update cell commits: \(url)")
+        task = NSURLSession.sharedSession().dataTaskWithURL(url, completionHandler: { (data, _, error) -> Void in
             guard let data = data where error == nil else {
                 print("error on download \(error)")
                 return
@@ -172,6 +180,11 @@ class RepoViewCell: UITableViewCell {
                 print("download completed \(url)")
                 self.layoutSubviews()
             }
-        }).resume()
+        })
+        task?.resume()
+    }
+    
+    deinit {
+        task?.cancel();
     }
 }
